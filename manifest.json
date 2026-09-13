@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "xechoz.launchpad",
+  "name": "Launchpad",
+  "version": "1.0.0",
+  "author": "xechoz",
+  "description": "全屏应用网格（类 macOS Launchpad / Ubuntu 应用抽屉）。数据复用 shell.appLibrary，与 Super+Space 的 Apps 完全一致。唤起: omarchy-shell shell toggle xechoz.launchpad '{}'",
+  "kinds": [
+    "panel",
+    "menu"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "panel": "Launchpad.qml",
+    "menu": "Launchpad.qml"
+  }
+}
