@@ -9,7 +9,7 @@ The grid mirrors the Super+Space menu's **Apps** section: same desktop-entry sou
 Copy the plugin directory into your Omarchy shell plugins folder:
 
 ```sh
-git clone https://github.com/xechoz/launchpad ~/.config/omarchy/plugins/xechoz.launchpad
+git clone https://github.com/xechoz/xechoz.launchpad ~/.config/omarchy/plugins/xechoz.launchpad
 ```
 
 Then restart or reload the shell so it picks up the new plugin.
