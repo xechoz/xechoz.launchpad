@@ -33,11 +33,11 @@ omarchy-shell shell toggle xechoz.launchpad '{}'
 Optional payload:
 
 ```json
-{ "columns": 7, "recent": 4 }
+{ "columns": 7, "recent": 7 }
 ```
 
 - `columns` — number of grid columns (default `7`).
-- `recent` — how many of the first row are the newest distinct apps; the row is filled to `columns` with the most frequently launched ones (default `-1`, i.e. fill by frequency only).
+- `recent` — how many of the first row are the newest distinct apps; the row is filled to `columns` with the most frequently launched ones (default `columns`).
 
 Left-click an app to launch it, right-click to uninstall it. `Esc` clears the search, then closes the pad; `Super+A` also closes it while open (the pad holds exclusive keyboard focus, so Hyprland never sees the key).
 

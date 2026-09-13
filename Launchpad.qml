@@ -19,13 +19,14 @@ import qs.Ui
 //
 // Summon with:
 //   omarchy-shell shell toggle xechoz.launchpad '{}'
-// Optional payload: { "columns": 7, "recent": 4 }
+// Optional payload: { "columns": 7, "recent": 7 }
 //
 // The first grid row surfaces recently/most launched apps. Launches are
 // counted locally while the pad is open and persisted to
 // ~/.local/state/omarchy/launchpad-usage.json. `recent` controls how many of
 // that row are the newest distinct apps; the row is filled to `columns` with
-// the most frequently launched ones. Those apps are not repeated below.
+// the most frequently launched ones (defaults to `columns`). Those apps are
+// not repeated below.
 Item {
   id: root
 
@@ -46,7 +47,7 @@ Item {
       } catch (e) { /* ignore */ }
     }
     root.columns = cols
-    root.recentCount = recent >= 0 ? Math.min(recent, cols) : Math.ceil(cols / 2)
+    root.recentCount = recent >= 0 ? Math.min(recent, cols) : cols
     root.filterText = ""
     root.rebuild()
     root.refreshIcons()
@@ -110,7 +111,7 @@ Item {
 
   // ---- state --------------------------------------------------------------
   property int columns: 7
-  property int recentCount: Math.ceil(root.columns / 2)
+  property int recentCount: root.columns
   property string filterText: ""
   property var apps: []
   property var deleteTarget: null
