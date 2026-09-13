@@ -10,12 +10,12 @@ import qs.Ui
 //
 // Data mirrors the Super+Space menu's Apps section. The shell normally injects
 // its shared library as shell.appLibrary, but third-party panel/overlay/menu
-// plugins currently receive a null appLibrary (the host's Instantiator converts
-// the manifest's `kinds` array to a V4Sequence, so its Array.isArray() kind
-// check fails). Launchpad therefore prefers shell.appLibrary when present and
-// otherwise falls back to LocalAppLibrary.qml, a drop-in replica with the same
-// public surface. If upstream fixes the injection, the fallback goes unused
-// with no code change needed here.
+// plugins may not receive it (the host's Instantiator can convert the manifest's
+// `kinds` array to a V4Sequence, so its Array.isArray() kind check fails).
+// Launchpad therefore prefers shell.appLibrary when present and otherwise
+// lazily instantiates LocalAppLibrary.qml, a drop-in replica with the same
+// public surface. If upstream fixes the injection, the fallback is never even
+// created, with no code change needed here.
 //
 // Summon with:
 //   omarchy-shell shell toggle xechoz.launchpad '{}'
@@ -74,12 +74,20 @@ Item {
 
   // ---- app library (official shell.appLibrary, local replica as fallback) --
   // LocalAppLibrary mirrors the official API surface, so the rest of this file
-  // calls root.lib.* without caring which one is active.
-  LocalAppLibrary { id: localAppLibrary }
+  // calls root.lib.* without caring which one is active. It is only instantiated
+  // when the official library is unavailable, so its hidden-entry and icon scans
+  // never run alongside the shell's own.
+  readonly property bool hasOfficialLibrary: !!(root.shell && root.shell.appLibrary)
 
-  readonly property var lib: (root.shell && root.shell.appLibrary)
+  Loader {
+    id: fallbackLibrary
+    active: !root.hasOfficialLibrary
+    sourceComponent: Component { LocalAppLibrary {} }
+  }
+
+  readonly property var lib: root.hasOfficialLibrary
     ? root.shell.appLibrary
-    : localAppLibrary
+    : fallbackLibrary.item
 
   function entryName(entry) {
     return root.lib ? root.lib.entryName(entry) : ""

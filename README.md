@@ -24,6 +24,18 @@ Then bind it in your Hyprland config, for example:
 bind = SUPER, space, exec, omarchy-shell shell toggle xechoz.launchpad '{}'
 ```
 
+## Uninstall
+
+```sh
+omarchy plugin remove xechoz.launchpad
+```
+
+This removes the plugin directory and its `shell.json` entry. To also delete the locally tracked launch history:
+
+```sh
+rm -f ~/.local/state/omarchy/launchpad-usage.json
+```
+
 ## Usage
 
 ```sh
@@ -46,7 +58,7 @@ Launch counts are tracked locally while the pad is open and persisted to `~/.loc
 ## How it works
 
 - **Overlay plugin.** The manifest declares `overlay` (plus `menu`) and the plugin draws its own full-screen `PanelWindow` on the overlay layer with exclusive keyboard focus.
-- **Application data.** `omarchy-shell` normally injects a shared application library as `shell.appLibrary`. Third-party overlay/panel/menu plugins currently receive a null `appLibrary` — the host's `Instantiator` converts the manifest's `kinds` array to a `V4Sequence`, so its `Array.isArray()` kind check fails — so Launchpad falls back to `LocalAppLibrary.qml`, a drop-in replica of the shell's library with the same public surface. When the official library is available it is preferred automatically and the fallback is never called.
+- **Application data.** `omarchy-shell` normally injects a shared application library as `shell.appLibrary`. Third-party overlay/panel/menu plugins may not receive it (the host builds the manifest seen by the plugin through an `Instantiator`, which can turn the manifest's `kinds` array into a `V4Sequence` so its `Array.isArray()` kind check fails), so Launchpad falls back to `LocalAppLibrary.qml`, a drop-in replica of the shell's library with the same public surface. The official library is preferred automatically when present; the fallback is only instantiated when it is not.
 - **Frosted backdrop.** Hyprland's layer blur is gated behind the globally-disabled `decoration:blur:enabled`, so the plugin grabs the screen with `grim` and blurs the bitmap itself. The window stays hidden until the frame is ready.
 
 ## Requirements
@@ -60,3 +72,7 @@ Launch counts are tracked locally while the pad is open and persisted to `~/.loc
 - `LocalAppLibrary.qml` — local fallback for `shell.appLibrary`.
 - `manifest.json` — Omarchy plugin manifest (`overlay` + `menu` entry points, `keepLoaded`).
 - `LICENSE` — MIT.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
