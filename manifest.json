@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "xechoz.launchpad",
   "name": "Launchpad",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": "xechoz",
   "license": "MIT",
   "description": "Full-screen application grid in the style of macOS Launchpad / the Ubuntu app drawer. Prefers the shell's shared app library and falls back to a built-in implementation when it is unavailable. Open with: omarchy-shell shell toggle xechoz.launchpad '{}'",

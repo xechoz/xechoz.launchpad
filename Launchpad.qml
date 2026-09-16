@@ -303,6 +303,17 @@ Item {
     root.deleteConfirmOpen = true
   }
 
+  // Desktop-entry names are untrusted local metadata. Strip control characters
+  // and collapse whitespace before the label reaches the confirmation dialog,
+  // so no markup or embedded newlines survive into that component.
+  function sanitizeLabel(value) {
+    return String(value || "")
+      .replace(/[\u0000-\u001f\u007f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 200)
+  }
+
   function confirmDelete() {
     var target = root.deleteTarget
     root.deleteConfirmOpen = false
@@ -422,6 +433,7 @@ Item {
 
     MouseArea {
       anchors.fill: parent
+      acceptedButtons: Qt.LeftButton | Qt.BackButton | Qt.ForwardButton
       onClicked: root.requestClose()
     }
 
@@ -545,6 +557,7 @@ Item {
               Text {
                 width: parent.width
                 text: cell.modelData.label
+                textFormat: Text.PlainText
                 color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.body
@@ -572,11 +585,21 @@ Item {
       }
     }
 
+    // Sits above the grid so the mouse's Back/Forward buttons close the pad
+    // even when the pointer is over a cell or the search field, which would
+    // otherwise consume the event before it reaches the scrim. Only these two
+    // buttons are accepted, so left/right clicks pass through unchanged.
+    MouseArea {
+      anchors.fill: parent
+      acceptedButtons: Qt.BackButton | Qt.ForwardButton
+      onClicked: root.requestClose()
+    }
+
     ConfirmDialog {
       id: deleteConfirm
       anchors.fill: parent
       opened: root.deleteConfirmOpen
-      message: root.deleteTarget ? "Uninstall " + root.deleteTarget.label + "?" : ""
+      message: root.deleteTarget ? "Uninstall " + root.sanitizeLabel(root.deleteTarget.label) + "?" : ""
       confirmText: "Uninstall"
       cancelText: "Cancel"
       background: root.background
