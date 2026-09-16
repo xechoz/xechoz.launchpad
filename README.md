@@ -70,8 +70,19 @@ Launch counts are tracked locally while the pad is open and persisted to `~/.loc
 
 - `Launchpad.qml` — the plugin entry point (UI, lifecycle, blur, usage tracking).
 - `LocalAppLibrary.qml` — local fallback for `shell.appLibrary`.
+- `scan-guard.sh` — bounded, process-group-controlled runner for the fallback's scans.
 - `manifest.json` — Omarchy plugin manifest (`overlay` + `menu` entry points, `keepLoaded`).
 - `LICENSE` — MIT.
+
+## Testing
+
+The scan runner's two limits are covered by a shell test:
+
+```sh
+bash tests/scan-guard.test.sh
+```
+
+It verifies that a single newline-free oversized record is capped before it reaches any parser, and that a child which ignores `TERM` is still killed with its process group.
 
 ## License
 

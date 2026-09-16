@@ -30,6 +30,24 @@ import qs.Ui
 Item {
   id: root
 
+  // Absolute executables. Resolving these through the ambient PATH would let a
+  // shadowed binary run in the long-lived shell context, so every spawn below
+  // uses a verified absolute path instead.
+  readonly property string grimPath: "/usr/bin/grim"
+  readonly property string mkdirPath: "/usr/bin/mkdir"
+
+  // Minimal environment for the screenshot helper: grim needs the Wayland
+  // socket and the runtime dir, nothing else from the ambient environment.
+  readonly property var bgEnvironment: {
+    var env = {
+      "XDG_RUNTIME_DIR": Quickshell.env("XDG_RUNTIME_DIR") || "",
+      "WAYLAND_DISPLAY": Quickshell.env("WAYLAND_DISPLAY") || ""
+    }
+    var out = ({})
+    for (var key in env) if (env[key] !== "") out[key] = env[key]
+    return out
+  }
+
   // ---- plugin lifecycle ---------------------------------------------------
   property bool closingFromHost: false
   // Read by the shell's isPluginOpen() so toggle() knows the real state.
@@ -42,7 +60,7 @@ Item {
     if (payloadJson) {
       try {
         var parsed = JSON.parse(String(payloadJson))
-        if (parsed && parsed.columns) cols = Math.max(1, Math.round(parsed.columns))
+        if (parsed && parsed.columns) cols = Math.max(1, Math.min(20, Math.round(parsed.columns)))
         if (parsed && parsed.recent !== undefined) recent = Math.max(0, Math.round(parsed.recent))
       } catch (e) { /* ignore */ }
     }
@@ -132,15 +150,28 @@ Item {
   // Hyprland's layer blur is gated behind the globally-disabled
   // decoration:blur:enabled, so we grab the screen with grim and blur the
   // bitmap ourselves. The window stays hidden until the frame is ready.
-  property string bgPath: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/xechoz-launchpad-bg.png"
+  // The capture file lives in the owner-only runtime dir. If that is unset or
+  // not an absolute, traversal-free path, capture is skipped entirely rather
+  // than writing a predictable file into shared /tmp.
+  readonly property string bgRuntimeDir: {
+    var value = String(Quickshell.env("XDG_RUNTIME_DIR") || "")
+    if (value.charAt(0) !== "/") return ""
+    if (value.indexOf("..") >= 0) return ""
+    return value
+  }
+  property string bgPath: root.bgRuntimeDir ? root.bgRuntimeDir + "/xechoz-launchpad-bg.png" : ""
   property int bgVersion: 0
   property bool bgPending: false
 
   function captureBackground() {
+    if (!root.bgPath) {
+      root.revealIfPending()
+      return
+    }
     root.bgPending = true
     bgRevealTimer.stop()
     var name = window.screen ? window.screen.name : ""
-    bgGrim.command = name ? ["grim", "-o", name, root.bgPath] : ["grim", root.bgPath]
+    bgGrim.command = name ? [root.grimPath, "-o", name, root.bgPath] : [root.grimPath, root.bgPath]
     bgGrim.running = true
     bgRevealTimer.start()
   }
@@ -193,6 +224,7 @@ Item {
   }
 
   function flushUsage() {
+    if (!Quickshell.env("HOME")) return
     var apps = ({})
     for (var key in root.usage) apps[key] = root.usage[key]
     usageFile.setText(JSON.stringify({ version: 1, apps: apps }, null, 2) + "\n")
@@ -330,7 +362,9 @@ Item {
   // ---- usage persistence --------------------------------------------------
   Process {
     id: usageEnsureDir
-    command: ["mkdir", "-p", Quickshell.env("HOME") + "/.local/state/omarchy"]
+    command: [root.mkdirPath, "-p", Quickshell.env("HOME") + "/.local/state/omarchy"]
+    clearEnvironment: true
+    environment: root.bgEnvironment
   }
 
   FileView {
@@ -359,6 +393,8 @@ Item {
   // ---- frosted backdrop ---------------------------------------------------
   Process {
     id: bgGrim
+    clearEnvironment: true
+    environment: root.bgEnvironment
     onExited: function(code) {
       if (code === 0) {
         root.bgVersion++

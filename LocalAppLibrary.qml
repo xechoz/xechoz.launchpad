@@ -23,6 +23,17 @@ Item {
   readonly property string uwsmAppPath: "/usr/bin/uwsm-app"
   readonly property string gtkLaunchPath: "/usr/bin/gtk-launch"
 
+  // Bundled scan runner. It caps the producer stream before any parser sees it
+  // and runs each scan in its own process group so the deadline can TERM/KILL
+  // the whole tree. Resolved relative to this file so it travels with the
+  // plugin; the file:// prefix is stripped for the argv vector.
+  readonly property string scanGuardPath: {
+    var url = String(Qt.resolvedUrl("scan-guard.sh"))
+    if (url.indexOf("file://") === 0) url = url.slice(7)
+    try { url = decodeURIComponent(url) } catch (e) { /* keep raw */ }
+    return url
+  }
+
   // OMARCHY_PATH is ambient environment, so it is untrusted until validated.
   // Only the installed Omarchy tree is accepted; anything else disables the
   // removal action rather than building a command from attacker-controlled
@@ -89,10 +100,18 @@ Item {
   property var iconIndex: ({})
   property var pendingIconIndex: ({})
   property int pendingIconIndexCount: 0
+  property bool hiddenEntriesTruncated: false
+  property bool iconIndexTruncated: false
   readonly property int maxIconIndexEntries: 5000
   readonly property int maxHiddenEntryBytes: 262144
+  readonly property int maxIconIndexBytes: 1048576
   readonly property int scanDeadlineMs: 10000
   readonly property int scanKillGraceMs: 2000
+  // The helper enforces scanDeadlineMs/scanKillGraceMs itself; this later
+  // backstop only fires if the helper is wedged, and its TERM is forwarded to
+  // the scan's process group by the helper's trap.
+  readonly property int scanBackstopMs: 15000
+  readonly property string truncationMarker: "__launchpad_scan_truncated__"
 
   // Mirrors AppLibrary.appsChanged: the visible app set may have changed.
   signal appsChanged()
@@ -277,11 +296,15 @@ Item {
 
   function loadDesktopHiddenEntries(rawText) {
     var next = ({})
+    var truncated = false
     var lines = String(rawText || "").split(/\n/)
     for (var i = 0; i < lines.length; i++) {
+      if (lines[i] === root.truncationMarker) { truncated = true; continue }
       var id = root.normalizeDesktopId(lines[i])
       if (id.length > 0) next[id] = true
     }
+    root.hiddenEntriesTruncated = truncated
+    if (truncated) console.warn("Launchpad: hidden-entry scan truncated at " + root.maxHiddenEntryBytes + " bytes")
     root.desktopHiddenEntryIds = next
     root.appsChanged()
   }
@@ -304,6 +327,11 @@ Item {
   function indexIconLine(path) {
     var value = String(path || "").trim()
     if (value.length === 0) return
+    if (value === root.truncationMarker) {
+      root.iconIndexTruncated = true
+      console.warn("Launchpad: icon-index scan truncated at " + root.maxIconIndexBytes + " bytes")
+      return
+    }
     // Producer-side bound: a pathological scan cannot grow the index without
     // limit and exhaust memory in the long-lived shell.
     if (root.pendingIconIndexCount >= root.maxIconIndexEntries) return
@@ -327,87 +355,71 @@ Item {
     return Util.shellQuote(script) + " " + Util.shellQuote(desktop)
   }
 
+  // Wraps a scan command in the bundled guard: the guard caps the raw byte
+  // stream before any parser and owns the process group / deadline lifecycle.
+  function guardedScanCommand(limitBytes, command) {
+    return [root.bashPath, root.scanGuardPath, String(limitBytes), String(root.scanDeadlineMs / 1000),
+      String(root.scanKillGraceMs / 1000), root.truncationMarker, command]
+  }
+
   QtObject {
     id: hiddenEntryOutput
     property string text: ""
   }
 
   // Both scans run under a cleared allowlisted environment with an absolute
-  // bash, and each is bounded by a deadline (SIGTERM, then SIGKILL) and a
-  // producer-side output cap so a stalled or oversized scan cannot exhaust the
-  // long-lived shell context.
+  // bash, wrapped by scan-guard.sh: the guard caps the raw producer stream
+  // before SplitParser sees it and runs the scan in its own process group, so
+  // the deadline TERMs then KILLs the whole tree (not just the direct child)
+  // and reaps it. The QML timers below are only a backstop for a wedged guard.
   Process {
     id: hiddenEntryScan
-    command: [root.bashPath, "-c", root.hiddenEntryScanCommand()]
+    command: root.guardedScanCommand(root.maxHiddenEntryBytes, root.hiddenEntryScanCommand())
     clearEnvironment: true
     environment: root.spawnEnvironment
     stdout: SplitParser {
       onRead: function(line) {
-        if (hiddenEntryOutput.text.length >= root.maxHiddenEntryBytes) return
         hiddenEntryOutput.text += line + "\n"
       }
     }
     onStarted: {
       hiddenEntryOutput.text = ""
-      hiddenEntryScanDeadline.restart()
+      hiddenEntryScanBackstop.restart()
     }
     onExited: {
-      hiddenEntryScanDeadline.stop()
-      hiddenEntryScanKill.stop()
+      hiddenEntryScanBackstop.stop()
       root.loadDesktopHiddenEntries(hiddenEntryOutput.text)
     }
   }
 
   Timer {
-    id: hiddenEntryScanDeadline
-    interval: root.scanDeadlineMs
-    onTriggered: {
-      if (hiddenEntryScan.running) {
-        hiddenEntryScan.signal(15)
-        hiddenEntryScanKill.restart()
-      }
-    }
-  }
-
-  Timer {
-    id: hiddenEntryScanKill
-    interval: root.scanKillGraceMs
-    onTriggered: if (hiddenEntryScan.running) hiddenEntryScan.signal(9)
+    id: hiddenEntryScanBackstop
+    interval: root.scanBackstopMs
+    onTriggered: if (hiddenEntryScan.running) hiddenEntryScan.signal(15)
   }
 
   Process {
     id: iconIndexScan
-    command: [root.bashPath, "-c", root.iconIndexScanCommand()]
+    command: root.guardedScanCommand(root.maxIconIndexBytes, root.iconIndexScanCommand())
     clearEnvironment: true
     environment: root.spawnEnvironment
     stdout: SplitParser { onRead: function(line) { root.indexIconLine(line) } }
     onStarted: {
       root.pendingIconIndex = ({})
       root.pendingIconIndexCount = 0
-      iconIndexScanDeadline.restart()
+      root.iconIndexTruncated = false
+      iconIndexScanBackstop.restart()
     }
     onExited: {
-      iconIndexScanDeadline.stop()
-      iconIndexScanKill.stop()
+      iconIndexScanBackstop.stop()
       root.iconIndex = root.pendingIconIndex
     }
   }
 
   Timer {
-    id: iconIndexScanDeadline
-    interval: root.scanDeadlineMs
-    onTriggered: {
-      if (iconIndexScan.running) {
-        iconIndexScan.signal(15)
-        iconIndexScanKill.restart()
-      }
-    }
-  }
-
-  Timer {
-    id: iconIndexScanKill
-    interval: root.scanKillGraceMs
-    onTriggered: if (iconIndexScan.running) iconIndexScan.signal(9)
+    id: iconIndexScanBackstop
+    interval: root.scanBackstopMs
+    onTriggered: if (iconIndexScan.running) iconIndexScan.signal(15)
   }
 
   Timer {
